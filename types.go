@@ -2,6 +2,7 @@ package ffi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"sort"
 
@@ -89,14 +90,37 @@ func (s *SortedPublicSectorInfo) UnmarshalJSON(b []byte) error {
 
 // NewSortedPrivateSectorInfo returns a SortedPrivateSectorInfo
 func NewSortedPrivateSectorInfo(sectorInfo ...PrivateSectorInfo) SortedPrivateSectorInfo {
-	fn := func(i, j int) bool {
-		return bytes.Compare(sectorInfo[i].SealedCID.Bytes(), sectorInfo[j].SealedCID.Bytes()) == -1
+	var remove_duplicate_privSector = make([]PrivateSectorInfo, 0)
+	for i := range sectorInfo {
+		for j := range remove_duplicate_privSector {
+			if !(remove_duplicate_privSector[j].SectorNumber == sectorInfo[i].SectorNumber) {
+				remove_duplicate_privSector = append(remove_duplicate_privSector, sectorInfo[i])
+			}
+		}
 	}
 
-	sort.Slice(sectorInfo[:], fn)
+	new_sector_len := len(remove_duplicate_privSector)
+	if new_sector_len < 2 {
+		return SortedPrivateSectorInfo{
+			f: remove_duplicate_privSector,
+		}
+	}
+
+	for i := 0; i < new_sector_len; i++ {
+		flag := false
+		for j := 0; j < new_sector_len-i-1; j++ {
+			if remove_duplicate_privSector[j].SectorNumber > remove_duplicate_privSector[j+1].SectorNumber {
+				remove_duplicate_privSector[j], remove_duplicate_privSector[j+1] = remove_duplicate_privSector[j+1], remove_duplicate_privSector[j]
+				flag = true
+			}
+		}
+		if !flag {
+			break
+		}
+	}
 
 	return SortedPrivateSectorInfo{
-		f: sectorInfo,
+		f: remove_duplicate_privSector,
 	}
 }
 
@@ -130,4 +154,12 @@ type PrivateSectorInfo struct {
 // AllocationManager is an interface that provides Free() capability.
 type AllocationManager interface {
 	Free()
+}
+
+func SplitSortedPrivateSectorInfo(ctx context.Context, sortPrivSectors SortedPrivateSectorInfo, start int, end int) (SortedPrivateSectorInfo, error) {
+	var newSortPrivSectors SortedPrivateSectorInfo
+	newSortPrivSectors.f = make([]PrivateSectorInfo, 0)
+	newSortPrivSectors.f = append(newSortPrivSectors.f, sortPrivSectors.f[start:end]...)
+
+	return newSortPrivSectors, nil
 }
